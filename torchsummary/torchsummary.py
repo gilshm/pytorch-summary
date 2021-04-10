@@ -45,6 +45,13 @@ def summary_string(model, input_size, batch_size=-1, device=torch.device('cuda:0
                 params += torch.prod(torch.LongTensor(list(module.bias.size())))
             summary[m_key]["nb_params"] = params
 
+            if isinstance(module, nn.Conv2d):
+                summary[m_key]["mac_ops"] = output.size(1) * output.size(2) * output.size(3) * module.weight.size(1) * module.weight.size(2) * module.weight.size(3)
+            elif isinstance(module, nn.Linear):
+                summary[m_key]["mac_ops"] = output.size(1) * module.weight.size(1)
+            else:
+                summary[m_key]["mac_ops"] = 0
+
         if (
             not isinstance(module, nn.Sequential)
             and not isinstance(module, nn.ModuleList)
@@ -74,22 +81,28 @@ def summary_string(model, input_size, batch_size=-1, device=torch.device('cuda:0
     for h in hooks:
         h.remove()
 
-    summary_str += "----------------------------------------------------------------" + "\n"
-    line_new = "{:>20}  {:>25} {:>15}".format(
-        "Layer (type)", "Output Shape", "Param #")
+    summary_str += "----------------------------------------------------------------------------------------------" \
+                   "----------" + "\n"
+    line_new = "{:>20} {:>25} {:>25} {:>15} {:>15}".format(
+        "Layer (type)", "Input Shape", "Output Shape", "Param #", "MAC #")
     summary_str += line_new + "\n"
-    summary_str += "================================================================" + "\n"
+    summary_str += "==============================================================================================" \
+                   "==========" + "\n"
     total_params = 0
     total_output = 0
+    total_macs = 0
     trainable_params = 0
     for layer in summary:
         # input_shape, output_shape, trainable, nb_params
-        line_new = "{:>20}  {:>25} {:>15}".format(
+        line_new = "{:>20} {:>25} {:>25} {:>15} {:>15}".format(
             layer,
+            str(summary[layer]["input_shape"]),
             str(summary[layer]["output_shape"]),
             "{0:,}".format(summary[layer]["nb_params"]),
+            "{0:,}".format(summary[layer]["mac_ops"]),
         )
         total_params += summary[layer]["nb_params"]
+        total_macs += summary[layer]["mac_ops"]
 
         total_output += np.prod(summary[layer]["output_shape"])
         if "trainable" in summary[layer]:
@@ -105,11 +118,13 @@ def summary_string(model, input_size, batch_size=-1, device=torch.device('cuda:0
     total_params_size = abs(total_params * 4. / (1024 ** 2.))
     total_size = total_params_size + total_output_size + total_input_size
 
-    summary_str += "================================================================" + "\n"
+    summary_str += "==============================================================================================" \
+                   "==========" + "\n"
     summary_str += "Total params: {0:,}".format(total_params) + "\n"
     summary_str += "Trainable params: {0:,}".format(trainable_params) + "\n"
     summary_str += "Non-trainable params: {0:,}".format(total_params -
                                                         trainable_params) + "\n"
+    summary_str += "Total CONV and FC MAC operations: {0:,}".format(total_macs) + "\n"
     summary_str += "----------------------------------------------------------------" + "\n"
     summary_str += "Input size (MB): %0.2f" % total_input_size + "\n"
     summary_str += "Forward/backward pass size (MB): %0.2f" % total_output_size + "\n"
